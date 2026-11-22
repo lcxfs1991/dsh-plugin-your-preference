@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-plugin-your-preference
+      name: '@local/dsh-plugin-your-preference'
