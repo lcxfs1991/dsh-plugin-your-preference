@@ -2,11 +2,12 @@
  * Browser half of dsh-plugin-your-preference.
  *
  * Adds one entry to the left sidebar's foot. Activating it opens a modal
- * dialog that lists what DeepSeek Harness has: the product itself, the
- * enabled default plugins, externally installed plugins, and installed
- * skills. Export downloads the list as YAML; import sends a YAML file back
- * to the Host, which installs/enables the listed plugins and registers the
- * listed skill bodies.
+ * dialog with three capabilities:
+ *   1. Inventory - product version, enabled default plugins, external plugins,
+ *      installed skills and the raw user skills under ~/.dsh/skills.
+ *   2. Git - status of this plugin's own checkout and a commit action.
+ *   3. Export/Import - download a ZIP (YAML manifest + every user skill) or
+ *      import one, installing plugins and copying skills without overwrites.
  *
  * The module deliberately depends only on `react` and the built-in slot
  * services — it does not import Harness Client packages at runtime.
@@ -19,6 +20,8 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const { useState, useEffect, useRef, useCallback } = React
 
+    const INVENTORY_URL = '/api/dsh-pref/inventory'
+    const GIT_URL = '/api/dsh-pref/git'
     const EXPORT_URL = '/api/dsh-pref/export'
     const IMPORT_URL = '/api/dsh-pref/import'
 
@@ -31,20 +34,22 @@ window.__ModuleLoader__.load({
         'dialog.label': 'Personal Preference',
         'version': 'Version {0}',
         'close': 'Close',
-        'export': 'Export YAML',
-        'import': 'Import YAML',
+        'export': 'Export ZIP',
+        'import': 'Import ZIP',
         'loading': 'Loading…',
         'readInventory': 'Reading DeepSeek Harness…',
         'section.default': 'Default plugins enabled',
         'section.external': 'External installed plugins',
         'section.skills': 'Skills installed',
+        'section.userSkills': 'User skills (~/.dsh/skills)',
+        'section.git': 'Git repository',
         'none': 'None',
         'loadError': 'Could not load inventory: {0}',
         'retry': 'Retry',
-        'exportDone': 'Exported dsh-preference.yaml',
+        'exportDone': 'Exported dsh-preference.zip',
         'exportFailed': 'Export failed: {0}',
-        'importDone': 'Imported: {0} plugin change(s), {1} skill change(s).',
-        'importProblems': 'Import completed with {0} problem(s).',
+        'importDone': 'Imported: {0} plugin change(s), {1} skill file(s) copied.',
+        'importProblems': 'Import completed with {0} issue(s).',
         'importFailed': 'Import failed: {0}',
         'badge.default': 'Default',
         'badge.bundled': 'Bundled',
@@ -52,26 +57,47 @@ window.__ModuleLoader__.load({
         'badge.missing': 'Missing',
         'badge.enabled': 'Enabled',
         'badge.disabled': 'Disabled',
-        'note.skills': 'Note: imported skill bodies are runtime-only and need re-import after a restart; provider-backed skills stay available after install.',
+        'git.branch': 'Branch',
+        'git.commit': 'Commit',
+        'git.clean': 'Clean',
+        'git.dirty': '{0} change(s)',
+        'git.lastCommit': 'Last commit',
+        'git.refresh': 'Refresh',
+        'git.commitAction': 'Commit changes',
+        'git.commitPrompt': 'Commit message',
+        'git.commitPlaceholder': 'Describe your changes…',
+        'git.confirm': 'Commit',
+        'git.cancel': 'Cancel',
+        'git.committed': 'Committed as {0}',
+        'git.nothing': 'Nothing to commit; working tree is clean.',
+        'git.error': 'Git error: {0}',
+        'git.unavailable': 'Git is not available for this plugin.',
+        'git.remote': 'Remote',
+        'conflicts.title': 'Skipped {0} conflicting skill file(s) (not overwritten):',
+        'note.export': 'The exported ZIP contains manifest.yaml (plugin and skill information) plus every user skill from ~/.dsh/skills.',
+        'note.import': 'On import, plugins are installed and skill files are copied into ~/.dsh/skills. Existing files are never overwritten; conflicts are reported above.',
+        'files': '{0} file(s)',
       },
       zh: {
         'sidebar.label': '个性化管理',
         'dialog.label': '个性化管理',
         'version': '版本 {0}',
         'close': '关闭',
-        'export': '导出 YAML',
-        'import': '导入 YAML',
+        'export': '导出 ZIP',
+        'import': '导入 ZIP',
         'loading': '加载中…',
         'readInventory': '正在读取 DeepSeek Harness…',
         'section.default': '已启用的默认插件',
         'section.external': '外部安装的插件',
         'section.skills': '已安装的技能',
+        'section.userSkills': '用户技能（~/.dsh/skills）',
+        'section.git': 'Git 仓库',
         'none': '无',
         'loadError': '无法读取清单：{0}',
         'retry': '重试',
-        'exportDone': '已导出 dsh-preference.yaml',
+        'exportDone': '已导出 dsh-preference.zip',
         'exportFailed': '导出失败：{0}',
-        'importDone': '已导入：{0} 项插件变更，{1} 项技能变更。',
+        'importDone': '已导入：{0} 项插件变更，复制了 {1} 个技能文件。',
         'importProblems': '导入完成，但有 {0} 个问题。',
         'importFailed': '导入失败：{0}',
         'badge.default': '默认',
@@ -80,107 +106,27 @@ window.__ModuleLoader__.load({
         'badge.missing': '缺失',
         'badge.enabled': '已启用',
         'badge.disabled': '已禁用',
-        'note.skills': '提示：导入的技能正文作为运行时技能生效，重启后需重新导入；由插件或文件系统提供的技能会随安装保留。',
+        'git.branch': '分支',
+        'git.commit': '提交',
+        'git.clean': '干净',
+        'git.dirty': '{0} 项变更',
+        'git.lastCommit': '最近提交',
+        'git.refresh': '刷新',
+        'git.commitAction': '提交变更',
+        'git.commitPrompt': '提交信息',
+        'git.commitPlaceholder': '描述你的变更…',
+        'git.confirm': '提交',
+        'git.cancel': '取消',
+        'git.committed': '已提交为 {0}',
+        'git.nothing': '没有可提交的内容；工作区干净。',
+        'git.error': 'Git 错误：{0}',
+        'git.unavailable': '此插件的 Git 功能不可用。',
+        'git.remote': '远程仓库',
+        'conflicts.title': '已跳过 {0} 个冲突的技能文件（未覆盖）：',
+        'note.export': '导出的 ZIP 包含 manifest.yaml（插件与技能信息），以及 ~/.dsh/skills 下的所有用户技能。',
+        'note.import': '导入时会安装插件并将技能文件复制到 ~/.dsh/skills。已有文件不会被覆盖；冲突会在上方提示。',
+        'files': '{0} 个文件',
       },
-    }
-
-    // ---- minimal YAML reader for our own export format ----------------
-    // The export endpoint is the single source of truth; reading it here
-    // keeps the dialog in sync with exactly what Export downloads.
-    function parseYaml(text) {
-      const lines = String(text).replace(/^#.*\n/gm, '').replace(/\r\n?/g, '\n').split('\n')
-      const entries = []
-      for (const raw of lines) {
-        if (raw.trim().length === 0) continue
-        const match = /^( *)(.*)$/.exec(raw)
-        if (match) entries.push({ indent: match[1].length, content: match[2] })
-      }
-      if (entries.length === 0) return null
-      const parsed = parseBlock(entries, 0, entries[0].indent)
-      return parsed.value
-    }
-    function parseBlock(entries, start, indent) {
-      return entries[start].content.startsWith('- ')
-        ? parseSequence(entries, start, indent)
-        : parseMapping(entries, start, indent)
-    }
-    function parseSequence(entries, start, indent) {
-      const items = []
-      let i = start
-      while (i < entries.length && entries[i].indent === indent && entries[i].content.startsWith('- ')) {
-        const rest = entries[i].content.slice(2).trim()
-        i += 1
-        if (rest.length === 0) {
-          if (i < entries.length && entries[i].indent > indent) {
-            const parsed = parseBlock(entries, i, entries[i].indent)
-            items.push(parsed.value); i = parsed.next
-          } else items.push(null)
-        } else if (findColon(rest) >= 0) {
-          const colon = findColon(rest)
-          const obj = {}
-          const key = parseScalar(rest.slice(0, colon).trim())
-          if (['__proto__','constructor','prototype'].includes(String(key))) throw new Error(`unsafe YAML key: ${String(key)}`)
-          const inline = rest.slice(colon + 1).trim()
-          if (inline.length > 0) obj[key] = parseScalar(inline)
-          else if (i < entries.length && entries[i].indent > indent) {
-            const parsed = parseBlock(entries, i, entries[i].indent)
-            obj[key] = parsed.value; i = parsed.next
-          } else obj[key] = null
-          if (i < entries.length && entries[i].indent > indent) {
-            const more = parseMapping(entries, i, entries[i].indent)
-            Object.assign(obj, more.value); i = more.next
-          }
-          items.push(obj)
-        } else items.push(parseScalar(rest))
-      }
-      return { value: items, next: i }
-    }
-    function parseMapping(entries, start, indent) {
-      const obj = {}
-      let i = start
-      while (i < entries.length && entries[i].indent === indent && !entries[i].content.startsWith('- ')) {
-        const line = entries[i].content
-        const colon = findColon(line)
-        if (colon < 0) throw new Error(`expected ':' in YAML line ${i + 1}`)
-        const key = parseScalar(line.slice(0, colon).trim())
-        const inline = line.slice(colon + 1).trim()
-        i += 1
-        if (inline.length === 0) {
-          if (i < entries.length && entries[i].indent > indent) {
-            const parsed = parseBlock(entries, i, entries[i].indent)
-            obj[key] = parsed.value; i = parsed.next
-          } else obj[key] = null
-        } else obj[key] = parseScalar(inline)
-      }
-      return { value: obj, next: i }
-    }
-    function findColon(text) {
-      let quote = null
-      for (let i = 0; i < text.length; i += 1) {
-        const char = text[i]
-        if (quote !== null) {
-          if (char === '\\') { i += 1; continue }
-          if (char === quote) quote = null
-          continue
-        }
-        if (char === '"' || char === "'") { quote = char; continue }
-        if (char === ':') return i
-      }
-      return -1
-    }
-    function parseScalar(text) {
-      const value = String(text).trim()
-      if (value === 'null' || value === '~') return null
-      if (value === 'true') return true
-      if (value === 'false') return false
-      if (value === '[]') return []
-      if (value === '{}') return {}
-      if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        if (value.startsWith('"')) { try { return JSON.parse(value) } catch { /* fall through */ } }
-        return value.slice(1, -1).replace(/''/g, "'")
-      }
-      return value.replace(/\s+#.*$/, '')
     }
 
     // ---- shared open/close state (observable store) ------------------
@@ -247,7 +193,8 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function SkillRow({ item }) {
+    function SkillRow({ item, t }) {
+      const count = Array.isArray(item.files) ? item.files.length : 0
       return h('li', {
         style: {
           display: 'flex', flexDirection: 'column', gap: 2,
@@ -256,7 +203,8 @@ window.__ModuleLoader__.load({
       },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8 } },
           h('span', { style: { fontSize: 13, fontWeight: 600, overflowWrap: 'anywhere' } }, item.name),
-          h('span', { style: { fontSize: 11, opacity: 0.7, flexShrink: 0 } }, item.source || item.provider),
+          h('span', { style: { fontSize: 11, opacity: 0.7, flexShrink: 0 } },
+            item.source || item.provider || (count ? t('files', { 0: String(count) }) : '')),
         ),
         item.description ? h('span', { style: { fontSize: 12, opacity: 0.75, overflowWrap: 'anywhere' } }, item.description) : null,
       )
@@ -276,36 +224,106 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // ---- git panel ---------------------------------------------------
+    function GitPanel({ git, refresh, commit, busy, t }) {
+      const [message, setMessage] = useState('')
+      const [showInput, setShowInput] = useState(false)
+      if (!git || git.ok === false) {
+        return h('div', { style: { fontSize: 12, opacity: 0.75, padding: '6px 0' } }, t('git.unavailable'))
+      }
+      const doCommit = async () => {
+        const text = message.trim()
+        if (!text) return
+        const ok = await commit(text)
+        if (ok) { setMessage(''); setShowInput(false) }
+      }
+      return h('div', {
+        style: {
+          padding: '10px 12px', borderRadius: 8, marginTop: 6,
+          background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,0.06))',
+          border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.18))',
+        },
+      },
+        h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12 } },
+          h('span', {}, `${t('git.branch')}: `, h('code', {}, git.branch || '—')),
+          h('span', {}, `${t('git.commit')}: `, h('code', {}, git.commit || '—')),
+          h('span', {
+            style: {
+              color: git.clean
+                ? 'var(--dsw-alias-state-success-primary, #2f855a)'
+                : 'var(--dsw-alias-state-warning-primary, #b7791f)',
+            },
+          }, git.clean ? t('git.clean') : t('git.dirty', { 0: String(git.changedCount ?? git.changed?.length ?? 0) })),
+        ),
+        git.lastCommit ? h('div', { style: { fontSize: 12, opacity: 0.7, marginTop: 4 } },
+          `${t('git.lastCommit')}: ${git.lastCommit}`) : null,
+        git.remote ? h('div', { style: { fontSize: 11, opacity: 0.6, marginTop: 4, overflowWrap: 'anywhere' } },
+          `${t('git.remote')}: ${git.remote}`) : null,
+        git.changed && git.changed.length > 0
+          ? h('ul', { style: { margin: '6px 0 0', paddingLeft: 18, fontSize: 11, opacity: 0.7 } },
+              git.changed.slice(0, 12).map((line, index) => h('li', { key: index }, line)))
+          : null,
+        h('div', { style: { display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' } },
+          h('button', { type: 'button', onClick: () => void refresh(), disabled: busy, style: buttonStyle() },
+            busy === 'git-refresh' ? h(Spinner) : null, t('git.refresh')),
+          h('button', {
+            type: 'button', onClick: () => setShowInput(v => !v), disabled: busy || git.clean,
+            style: buttonStyle(),
+          }, t('git.commitAction')),
+        ),
+        showInput && !git.clean
+          ? h('div', { style: { display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' } },
+              h('input', {
+                type: 'text', value: message, autoFocus: true,
+                placeholder: t('git.commitPlaceholder'), 'aria-label': t('git.commitPrompt'),
+                onChange: (event) => setMessage(event.target.value),
+                onKeyDown: (event) => { if (event.key === 'Enter') void doCommit() },
+                style: {
+                  flex: 1, minWidth: 180, padding: '6px 8px', fontSize: 13,
+                  color: 'inherit', background: 'var(--dsw-alias-bg-layer-1, transparent)',
+                  border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))', borderRadius: 6,
+                },
+              }),
+              h('button', { type: 'button', onClick: () => void doCommit(), disabled: busy || !message.trim(), style: buttonStyle() },
+                busy === 'git-commit' ? h(Spinner) : null, t('git.confirm')),
+              h('button', { type: 'button', onClick: () => { setShowInput(false); setMessage('') }, disabled: busy, style: buttonStyle() }, t('git.cancel')),
+            )
+          : null,
+      )
+    }
+
     // ---- the dialog ---------------------------------------------------
     function PreferenceDialog({ useOpen, close, t }) {
       const open = useOpen(current => current)
       const [state, setState] = useState({ status: 'idle', data: null, error: null, action: null, actionResult: null })
+      const [git, setGit] = useState(null)
       const fileRef = useRef(null)
       const closeRef = useRef(null)
       const dialogRef = useRef(null)
 
+      const loadGit = useCallback(async () => {
+        try {
+          const response = await fetch(GIT_URL)
+          const data = await response.json()
+          setGit(data)
+        } catch (error) {
+          setGit({ ok: false, error: String(error) })
+        }
+      }, [])
+
       const load = useCallback(async () => {
         setState({ status: 'loading', data: null, error: null, action: null, actionResult: null })
         try {
-          const response = await fetch(EXPORT_URL, { headers: { Accept: 'application/yaml' } })
+          const response = await fetch(INVENTORY_URL, { headers: { Accept: 'application/json' } })
           if (!response.ok) throw new Error(`HTTP ${response.status}`)
-          const manifest = parseYaml(await response.text())
-          if (!manifest || typeof manifest !== 'object' || manifest.schemaVersion !== 1) {
-            throw new Error('unsupported manifest schema')
-          }
-          const data = {
-            product: manifest?.product,
-            plugins: {
-              defaultEnabled: manifest?.plugins?.defaultEnabled ?? [],
-              externalInstalled: manifest?.plugins?.externalInstalled ?? [],
-            },
-            skills: manifest?.skills ?? [],
-          }
+          const data = await response.json()
+          if (!data || data.ok !== true) throw new Error(data?.error ?? 'unsupported inventory')
           setState({ status: 'ready', data, error: null, action: null, actionResult: null })
         } catch (error) {
           setState({ status: 'error', data: null, error: String(error), action: null, actionResult: null })
         }
-      }, [])
+        void loadGit()
+      }, [loadGit])
 
       useEffect(() => {
         if (open) void load()
@@ -344,7 +362,7 @@ window.__ModuleLoader__.load({
           const url = URL.createObjectURL(blob)
           const link = document.createElement('a')
           link.href = url
-          link.download = 'dsh-preference.yaml'
+          link.download = 'dsh-preference.zip'
           document.body.appendChild(link)
           link.click()
           link.remove()
@@ -361,30 +379,57 @@ window.__ModuleLoader__.load({
         event.target.value = ''
         setState(current => ({ ...current, action: 'import', actionResult: null }))
         try {
-          const text = await file.text()
           const response = await fetch(IMPORT_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/yaml; charset=utf-8' },
-            body: text,
+            headers: { 'Content-Type': 'application/zip' },
+            body: await file.arrayBuffer(),
           })
           const result = await response.json()
+          if (!response.ok && !result) throw new Error(`HTTP ${response.status}`)
+          if (result.error) throw new Error(result.error)
           const pluginActions = (result.plugins ?? []).filter(item => item.result || item.error)
-          const skillActions = (result.skills ?? []).filter(item => item.action === 'register' || item.error)
+          const copied = (result.skills ?? []).filter(item => item.action === 'installed')
+          const conflicts = result.conflicts ?? []
           const problems = [
             ...(result.plugins ?? []).filter(item => item.error).map(item => `${item.name}: ${item.error}`),
-            ...(result.skills ?? []).filter(item => item.error).map(item => `${item.name}: ${item.error}`),
-            ...(result.error ? [result.error] : []),
+            ...(result.skills ?? []).filter(item => item.error).map(item => `${item.path}: ${item.error}`),
           ]
-          const summary = problems.length > 0
-            ? t('importProblems', { 0: String(problems.length) })
-            : t('importDone', { 0: String(pluginActions.length), 1: String(skillActions.length) })
+          const ok = problems.length === 0 && result.ok !== false
+          const summary = conflicts.length > 0 || problems.length > 0
+            ? t('importProblems', { 0: String(problems.length + conflicts.length) })
+            : t('importDone', { 0: String(pluginActions.length), 1: String(copied.length) })
           setState(current => ({
             ...current, action: null,
-            actionResult: { ok: problems.length === 0, text: summary, problems, notes: result.notes ?? [] },
+            actionResult: { ok, text: summary, problems, conflicts, notes: result.notes ?? [] },
           }))
-          if (pluginActions.length > 0 || skillActions.length > 0) void load()
+          if (pluginActions.length > 0 || copied.length > 0) void load()
         } catch (error) {
           setState(current => ({ ...current, action: null, actionResult: { ok: false, text: t('importFailed', { 0: String(error) }) } }))
+        }
+      }
+
+      const onCommit = async (message) => {
+        setState(current => ({ ...current, action: 'git-commit', actionResult: null }))
+        try {
+          const response = await fetch(GIT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message }),
+          })
+          const result = await response.json()
+          if (!result.ok) throw new Error(result.error ?? `HTTP ${response.status}`)
+          setState(current => ({
+            ...current, action: null,
+            actionResult: {
+              ok: true,
+              text: result.committed ? t('git.committed', { 0: result.commit }) : t('git.nothing'),
+            },
+          }))
+          void loadGit()
+          return true
+        } catch (error) {
+          setState(current => ({ ...current, action: null, actionResult: { ok: false, text: t('git.error', { 0: String(error) }) } }))
+          return false
         }
       }
 
@@ -394,6 +439,7 @@ window.__ModuleLoader__.load({
       const defaultPlugins = data?.plugins?.defaultEnabled ?? []
       const externalPlugins = data?.plugins?.externalInstalled ?? []
       const skills = data?.skills ?? []
+      const userSkills = data?.userSkills?.skills ?? []
       const busy = state.action !== null
 
       return h('div', {
@@ -410,7 +456,7 @@ window.__ModuleLoader__.load({
           ref: dialogRef,
           role: 'dialog', 'aria-modal': 'true', 'aria-label': t('dialog.label'),
           style: {
-            width: 'min(680px, 100%)', maxHeight: 'min(80vh, 720px)',
+            width: 'min(720px, 100%)', maxHeight: 'min(84vh, 760px)',
             display: 'flex', flexDirection: 'column',
             background: 'var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-1, #fff))',
             color: 'var(--dsw-alias-label-primary, inherit)',
@@ -459,7 +505,7 @@ window.__ModuleLoader__.load({
               style: buttonStyle(),
             }, busy === 'import' ? h(Spinner) : null, t('import')),
             h('input', {
-              ref: fileRef, type: 'file', accept: '.yaml,.yml,text/yaml,application/yaml',
+              ref: fileRef, type: 'file', accept: '.zip,application/zip',
               style: { display: 'none' }, onChange: (event) => void onImportFile(event),
             }),
             state.status === 'loading' ? h('span', { style: { fontSize: 12, opacity: 0.7, marginLeft: 4 } }, h(Spinner), ' ' + t('loading')) : null,
@@ -481,6 +527,15 @@ window.__ModuleLoader__.load({
                 ? h('ul', { style: { margin: '6px 0 0', paddingLeft: 18 } },
                     state.actionResult.problems.map((problem, index) => h('li', { key: index }, problem)))
                 : null,
+              (state.actionResult.conflicts ?? []).length > 0
+                ? h('div', {},
+                    h('div', { style: { marginTop: 6, fontWeight: 600 } },
+                      t('conflicts.title', { 0: String(state.actionResult.conflicts.length) })),
+                    h('ul', { style: { margin: '4px 0 0', paddingLeft: 18 } },
+                      state.actionResult.conflicts.map((conflict, index) => h('li', { key: index },
+                        `${conflict.path} — ${conflict.reason}`))),
+                  )
+                : null,
             )
             : null,
 
@@ -501,10 +556,14 @@ window.__ModuleLoader__.load({
                     h(Section, { title: t('section.external'), count: externalPlugins.length, t },
                       externalPlugins.map((item, index) => h(PluginRow, { key: `e-${index}`, item, t }))),
                     h(Section, { title: t('section.skills'), count: skills.length, t },
-                      skills.map((item, index) => h(SkillRow, { key: `s-${index}`, item }))),
+                      skills.map((item, index) => h(SkillRow, { key: `s-${index}`, item, t }))),
+                    h(Section, { title: t('section.userSkills'), count: userSkills.length, t },
+                      userSkills.map((item, index) => h(SkillRow, { key: `u-${index}`, item, t }))),
+                    h(Section, { title: t('section.git'), count: 1, t },
+                      h(GitPanel, { git, refresh: loadGit, commit: onCommit, busy, t })),
                     h('div', {
                       style: { marginTop: 16, fontSize: 11, opacity: 0.65, lineHeight: 1.5 },
-                    }, t('note.skills')),
+                    }, t('note.export'), h('br'), t('note.import')),
                   ),
           ),
         ),

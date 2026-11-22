@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Personal Preference",
-    "description": "Adds a sidebar entry that opens a dialog listing DeepSeek Harness, its enabled default plugins, externally installed plugins, and installed skills. Export the list as YAML or import a YAML file to install and enable its plugins and skills. Imported skill bodies are runtime-only and need re-import after a restart."
+    "description": "Adds a sidebar entry with a dialog that lists DeepSeek Harness plugins, installed skills and user skills under ~/.dsh/skills, and the git state of this plugin's checkout. Export downloads a ZIP containing manifest.yaml (plugin and skill information) plus every user skill; import installs the plugins and copies skills into ~/.dsh/skills without overwriting existing files, reporting any conflicts."
   }
 }
