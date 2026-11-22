@@ -5,8 +5,6 @@
  * Host Connection's shared `/api` channel (the same trust + auth fence every
  * other DSH API route uses):
  *   GET  /api/dsh-pref/inventory  -> the current Harness inventory as JSON
- *   GET  /api/dsh-pref/git        -> git state of this plugin's own checkout
- *   POST /api/dsh-pref/git        -> stage/commit the checkout (git capability)
  *   GET  /api/dsh-pref/export     -> a ZIP (YAML manifest + all user skills)
  *   POST /api/dsh-pref/import     -> apply an exported ZIP
  *
@@ -16,7 +14,6 @@
  */
 
 const INVENTORY_PATH = '/api/dsh-pref/inventory'
-const GIT_PATH = '/api/dsh-pref/git'
 const EXPORT_PATH = '/api/dsh-pref/export'
 const IMPORT_PATH = '/api/dsh-pref/import'
 const MAX_BODY_BYTES = 256 * 1024 * 1024
@@ -52,14 +49,6 @@ export function apply(ctx) {
       fetch: async () => jsonResponse(await readInventory()),
     }),
     connection.fetch.register({
-      path: GIT_PATH, methods: ['GET'], requestBody: 'buffered',
-      fetch: () => jsonResponse(gitStatus(ctx)),
-    }),
-    connection.fetch.register({
-      path: GIT_PATH, methods: ['POST'], requestBody: 'buffered',
-      fetch: request => gitCommit(ctx, request),
-    }),
-    connection.fetch.register({
       path: EXPORT_PATH, methods: ['GET'], requestBody: 'buffered',
       fetch: () => exportResponse(ctx, pluginManager, skills, readInventory),
     }),
@@ -78,74 +67,6 @@ function jsonResponse(value, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   })
-}
-
-/* ------------------------------------------------------------------ *
- * Git capability: report and commit this plugin's own checkout.
- * ------------------------------------------------------------------ */
-
-/** Locate the plugin checkout (this module's directory). */
-function pluginDirectory() {
-  return nodePath.dirname(fileURLToPath(import.meta.url))
-}
-
-/** Run a git command in the checkout, returning trimmed stdout or throwing. */
-function runGit(args, options = {}) {
-  const { execFileSync } = nodeChildProcess
-  return execFileSync('git', args, {
-    cwd: pluginDirectory(),
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    ...options,
-  }).trim()
-}
-
-/** Read the current git state of the plugin repository. */
-function gitStatus(ctx) {
-  try {
-    const inside = runGit(['rev-parse', '--is-inside-work-tree'])
-    if (inside !== 'true') return { ok: false, error: 'Not inside a git work tree' }
-    const branch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'])
-    const commit = runGit(['rev-parse', '--short', 'HEAD'])
-    const log = runGit(['log', '-1', '--pretty=format:%s'])
-    const porcelain = runGit(['status', '--porcelain=v1', '--untracked-files=all'])
-    const changed = porcelain.length > 0 ? porcelain.split('\n').filter(Boolean) : []
-    let remote = ''
-    try { remote = runGit(['remote', 'get-url', 'origin']) } catch { /* no origin */ }
-    return {
-      ok: true, repository: pluginDirectory(), branch, commit, lastCommit: log,
-      remote: remote || undefined, clean: changed.length === 0,
-      changed, changedCount: changed.length,
-    }
-  } catch (error) {
-    ctx.logger.warn('dsh-plugin-your-preference: git status failed', error)
-    return { ok: false, error: String(error) }
-  }
-}
-
-/** Stage the checkout and create a commit with the supplied message. */
-async function gitCommit(ctx, request) {
-  let body
-  try {
-    body = JSON.parse(await readBounded(request, 64 * 1024))
-  } catch (error) {
-    return jsonResponse({ ok: false, error: `Invalid request: ${String(error)}` }, 400)
-  }
-  const message = typeof body?.message === 'string' ? body.message.trim() : ''
-  if (message.length === 0) return jsonResponse({ ok: false, error: 'Commit message is required' }, 400)
-  try {
-    runGit(['add', '-A'])
-    const porcelain = runGit(['status', '--porcelain=v1', '--untracked-files=all'])
-    if (porcelain.length === 0) {
-      return jsonResponse({ ok: true, committed: false, note: 'Nothing to commit; working tree clean.' })
-    }
-    runGit(['commit', '-m', message])
-    const commit = runGit(['rev-parse', '--short', 'HEAD'])
-    return jsonResponse({ ok: true, committed: true, commit })
-  } catch (error) {
-    ctx.logger.warn('dsh-plugin-your-preference: git commit failed', error)
-    return jsonResponse({ ok: false, error: String(error) }, 422)
-  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -922,5 +843,4 @@ function parseScalar(text) {
 const nodeFs = await import('node:fs')
 const nodePath = await import('node:path')
 const nodeOs = await import('node:os')
-const nodeChildProcess = await import('node:child_process')
-const { fileURLToPath, createRequire } = await import('node:url')
+const { createRequire } = await import('node:url')

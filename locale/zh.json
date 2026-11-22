@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "个性化管理",
-    "description": "在侧边栏添加入口，打开对话框列出 DeepSeek Harness 插件、已安装技能，以及 ~/.dsh/skills 下的用户技能，并显示本插件代码库的 Git 状态。导出会下载一个 ZIP，其中包含 manifest.yaml（插件与技能信息）以及所有用户技能；导入时会安装插件并将技能复制到 ~/.dsh/skills，不覆盖已有文件，并提示冲突。"
+    "description": "在侧边栏添加入口，打开对话框列出 DeepSeek Harness 插件、已安装技能，以及 ~/.dsh/skills 下的用户技能。导出会下载一个 ZIP，其中包含 manifest.yaml（插件与技能信息）以及所有用户技能；导入时会安装插件并将技能复制到 ~/.dsh/skills，不覆盖已有文件，并提示冲突。"
   }
 }

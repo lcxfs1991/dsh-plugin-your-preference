@@ -2,11 +2,10 @@
  * Browser half of dsh-plugin-your-preference.
  *
  * Adds one entry to the left sidebar's foot. Activating it opens a modal
- * dialog with three capabilities:
+ * dialog with two capabilities:
  *   1. Inventory - product version, enabled default plugins, external plugins,
  *      installed skills and the raw user skills under ~/.dsh/skills.
- *   2. Git - status of this plugin's own checkout and a commit action.
- *   3. Export/Import - download a ZIP (YAML manifest + every user skill) or
+ *   2. Export/Import - download a ZIP (YAML manifest + every user skill) or
  *      import one, installing plugins and copying skills without overwrites.
  *
  * The module deliberately depends only on `react` and the built-in slot
@@ -21,7 +20,6 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, useRef, useCallback } = React
 
     const INVENTORY_URL = '/api/dsh-pref/inventory'
-    const GIT_URL = '/api/dsh-pref/git'
     const EXPORT_URL = '/api/dsh-pref/export'
     const IMPORT_URL = '/api/dsh-pref/import'
 
@@ -42,7 +40,6 @@ window.__ModuleLoader__.load({
         'section.external': 'External installed plugins',
         'section.skills': 'Skills installed',
         'section.userSkills': 'User skills (~/.dsh/skills)',
-        'section.git': 'Git repository',
         'none': 'None',
         'loadError': 'Could not load inventory: {0}',
         'retry': 'Retry',
@@ -57,22 +54,6 @@ window.__ModuleLoader__.load({
         'badge.missing': 'Missing',
         'badge.enabled': 'Enabled',
         'badge.disabled': 'Disabled',
-        'git.branch': 'Branch',
-        'git.commit': 'Commit',
-        'git.clean': 'Clean',
-        'git.dirty': '{0} change(s)',
-        'git.lastCommit': 'Last commit',
-        'git.refresh': 'Refresh',
-        'git.commitAction': 'Commit changes',
-        'git.commitPrompt': 'Commit message',
-        'git.commitPlaceholder': 'Describe your changes…',
-        'git.confirm': 'Commit',
-        'git.cancel': 'Cancel',
-        'git.committed': 'Committed as {0}',
-        'git.nothing': 'Nothing to commit; working tree is clean.',
-        'git.error': 'Git error: {0}',
-        'git.unavailable': 'Git is not available for this plugin.',
-        'git.remote': 'Remote',
         'conflicts.title': 'Skipped {0} conflicting skill file(s) (not overwritten):',
         'note.export': 'The exported ZIP contains manifest.yaml (plugin and skill information) plus every user skill from ~/.dsh/skills.',
         'note.import': 'On import, plugins are installed and skill files are copied into ~/.dsh/skills. Existing files are never overwritten; conflicts are reported above.',
@@ -91,7 +72,6 @@ window.__ModuleLoader__.load({
         'section.external': '外部安装的插件',
         'section.skills': '已安装的技能',
         'section.userSkills': '用户技能（~/.dsh/skills）',
-        'section.git': 'Git 仓库',
         'none': '无',
         'loadError': '无法读取清单：{0}',
         'retry': '重试',
@@ -106,22 +86,6 @@ window.__ModuleLoader__.load({
         'badge.missing': '缺失',
         'badge.enabled': '已启用',
         'badge.disabled': '已禁用',
-        'git.branch': '分支',
-        'git.commit': '提交',
-        'git.clean': '干净',
-        'git.dirty': '{0} 项变更',
-        'git.lastCommit': '最近提交',
-        'git.refresh': '刷新',
-        'git.commitAction': '提交变更',
-        'git.commitPrompt': '提交信息',
-        'git.commitPlaceholder': '描述你的变更…',
-        'git.confirm': '提交',
-        'git.cancel': '取消',
-        'git.committed': '已提交为 {0}',
-        'git.nothing': '没有可提交的内容；工作区干净。',
-        'git.error': 'Git 错误：{0}',
-        'git.unavailable': '此插件的 Git 功能不可用。',
-        'git.remote': '远程仓库',
         'conflicts.title': '已跳过 {0} 个冲突的技能文件（未覆盖）：',
         'note.export': '导出的 ZIP 包含 manifest.yaml（插件与技能信息），以及 ~/.dsh/skills 下的所有用户技能。',
         'note.import': '导入时会安装插件并将技能文件复制到 ~/.dsh/skills。已有文件不会被覆盖；冲突会在上方提示。',
@@ -224,92 +188,13 @@ window.__ModuleLoader__.load({
       )
     }
 
-    // ---- git panel ---------------------------------------------------
-    function GitPanel({ git, refresh, commit, busy, t }) {
-      const [message, setMessage] = useState('')
-      const [showInput, setShowInput] = useState(false)
-      if (!git || git.ok === false) {
-        return h('div', { style: { fontSize: 12, opacity: 0.75, padding: '6px 0' } }, t('git.unavailable'))
-      }
-      const doCommit = async () => {
-        const text = message.trim()
-        if (!text) return
-        const ok = await commit(text)
-        if (ok) { setMessage(''); setShowInput(false) }
-      }
-      return h('div', {
-        style: {
-          padding: '10px 12px', borderRadius: 8, marginTop: 6,
-          background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,0.06))',
-          border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.18))',
-        },
-      },
-        h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12 } },
-          h('span', {}, `${t('git.branch')}: `, h('code', {}, git.branch || '—')),
-          h('span', {}, `${t('git.commit')}: `, h('code', {}, git.commit || '—')),
-          h('span', {
-            style: {
-              color: git.clean
-                ? 'var(--dsw-alias-state-success-primary, #2f855a)'
-                : 'var(--dsw-alias-state-warning-primary, #b7791f)',
-            },
-          }, git.clean ? t('git.clean') : t('git.dirty', { 0: String(git.changedCount ?? git.changed?.length ?? 0) })),
-        ),
-        git.lastCommit ? h('div', { style: { fontSize: 12, opacity: 0.7, marginTop: 4 } },
-          `${t('git.lastCommit')}: ${git.lastCommit}`) : null,
-        git.remote ? h('div', { style: { fontSize: 11, opacity: 0.6, marginTop: 4, overflowWrap: 'anywhere' } },
-          `${t('git.remote')}: ${git.remote}`) : null,
-        git.changed && git.changed.length > 0
-          ? h('ul', { style: { margin: '6px 0 0', paddingLeft: 18, fontSize: 11, opacity: 0.7 } },
-              git.changed.slice(0, 12).map((line, index) => h('li', { key: index }, line)))
-          : null,
-        h('div', { style: { display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' } },
-          h('button', { type: 'button', onClick: () => void refresh(), disabled: busy, style: buttonStyle() },
-            busy === 'git-refresh' ? h(Spinner) : null, t('git.refresh')),
-          h('button', {
-            type: 'button', onClick: () => setShowInput(v => !v), disabled: busy || git.clean,
-            style: buttonStyle(),
-          }, t('git.commitAction')),
-        ),
-        showInput && !git.clean
-          ? h('div', { style: { display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' } },
-              h('input', {
-                type: 'text', value: message, autoFocus: true,
-                placeholder: t('git.commitPlaceholder'), 'aria-label': t('git.commitPrompt'),
-                onChange: (event) => setMessage(event.target.value),
-                onKeyDown: (event) => { if (event.key === 'Enter') void doCommit() },
-                style: {
-                  flex: 1, minWidth: 180, padding: '6px 8px', fontSize: 13,
-                  color: 'inherit', background: 'var(--dsw-alias-bg-layer-1, transparent)',
-                  border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))', borderRadius: 6,
-                },
-              }),
-              h('button', { type: 'button', onClick: () => void doCommit(), disabled: busy || !message.trim(), style: buttonStyle() },
-                busy === 'git-commit' ? h(Spinner) : null, t('git.confirm')),
-              h('button', { type: 'button', onClick: () => { setShowInput(false); setMessage('') }, disabled: busy, style: buttonStyle() }, t('git.cancel')),
-            )
-          : null,
-      )
-    }
-
     // ---- the dialog ---------------------------------------------------
     function PreferenceDialog({ useOpen, close, t }) {
       const open = useOpen(current => current)
       const [state, setState] = useState({ status: 'idle', data: null, error: null, action: null, actionResult: null })
-      const [git, setGit] = useState(null)
       const fileRef = useRef(null)
       const closeRef = useRef(null)
       const dialogRef = useRef(null)
-
-      const loadGit = useCallback(async () => {
-        try {
-          const response = await fetch(GIT_URL)
-          const data = await response.json()
-          setGit(data)
-        } catch (error) {
-          setGit({ ok: false, error: String(error) })
-        }
-      }, [])
 
       const load = useCallback(async () => {
         setState({ status: 'loading', data: null, error: null, action: null, actionResult: null })
@@ -322,8 +207,7 @@ window.__ModuleLoader__.load({
         } catch (error) {
           setState({ status: 'error', data: null, error: String(error), action: null, actionResult: null })
         }
-        void loadGit()
-      }, [loadGit])
+      }, [])
 
       useEffect(() => {
         if (open) void load()
@@ -405,31 +289,6 @@ window.__ModuleLoader__.load({
           if (pluginActions.length > 0 || copied.length > 0) void load()
         } catch (error) {
           setState(current => ({ ...current, action: null, actionResult: { ok: false, text: t('importFailed', { 0: String(error) }) } }))
-        }
-      }
-
-      const onCommit = async (message) => {
-        setState(current => ({ ...current, action: 'git-commit', actionResult: null }))
-        try {
-          const response = await fetch(GIT_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message }),
-          })
-          const result = await response.json()
-          if (!result.ok) throw new Error(result.error ?? `HTTP ${response.status}`)
-          setState(current => ({
-            ...current, action: null,
-            actionResult: {
-              ok: true,
-              text: result.committed ? t('git.committed', { 0: result.commit }) : t('git.nothing'),
-            },
-          }))
-          void loadGit()
-          return true
-        } catch (error) {
-          setState(current => ({ ...current, action: null, actionResult: { ok: false, text: t('git.error', { 0: String(error) }) } }))
-          return false
         }
       }
 
@@ -559,8 +418,6 @@ window.__ModuleLoader__.load({
                       skills.map((item, index) => h(SkillRow, { key: `s-${index}`, item, t }))),
                     h(Section, { title: t('section.userSkills'), count: userSkills.length, t },
                       userSkills.map((item, index) => h(SkillRow, { key: `u-${index}`, item, t }))),
-                    h(Section, { title: t('section.git'), count: 1, t },
-                      h(GitPanel, { git, refresh: loadGit, commit: onCommit, busy, t })),
                     h('div', {
                       style: { marginTop: 16, fontSize: 11, opacity: 0.65, lineHeight: 1.5 },
                     }, t('note.export'), h('br'), t('note.import')),
